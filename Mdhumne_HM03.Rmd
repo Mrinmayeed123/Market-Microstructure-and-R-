@@ -1,0 +1,171 @@
+---
+title: "Mdhumne_hm03"
+author: "Mrinmayee Dhumne"
+date: "4/1/2022"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+ ****Use this dataset to estimate the volatility of the efficient security price.
+```{r}
+
+library(xts)
+library(highfrequency)
+Sys.setenv(TZ = "GMT")  # work in East Coast Time Zone
+options(digits.secs=3)
+load("sampleTQdata.RData")
+
+tqdata<- tqdata
+head(tqdata)
+tail(tqdata)
+length(tqdata$SIZE)    #8153 trades 
+
+
+
+# Plot prices 
+
+asks <- as.numeric(tqdata$OFR)
+bids <- as.numeric(tqdata$BID)
+mids <- 0.5*bids + 0.5*asks
+
+qspread <- asks - bids
+
+pmin = min(as.numeric(tqdata$PRICE))
+pmax = max(as.numeric(tqdata$PRICE))
+plot(as.numeric(tqdata$PRICE),col="red", type="l", ylab="Trade price", 
+     xlab="Trade #", main="Trade price ", ylim=c(pmin-0.1,pmax+0.1))
+lines(mids, type="l", col="blue")
+
+plot(as.numeric(tqdata$SIZE),col="pink", type="l", 
+     ylab="Trade size", 
+     xlab="Trade #", main="Trade volume", ylim=c(0,10000))
+```
+
+Problem 1. Calibrate the Roll model on the time series of trade prices pt, and estimate the Roll model parameters c,σu. What is the estimated bid-ask spread 2c?
+
+```{r}
+#calibrate the Roll model on the real data
+pt <- as.numeric(tqdata$PRICE)
+dpt <- diff(pt)  # price change
+
+head(dpt)
+
+covpt <- acf(dpt, lag.max=20, type="covariance", 
+             main="covariance of price changes")
+# Roll model estimate of bid-ask spread
+gamma0 <- covpt$acf[1]
+print(gamma0)       
+
+gamma1 <- covpt$acf[2]
+print(gamma1)     
+
+```
+Gamma 0 = 0.002884046
+Gamma 1 = -0.0004072397
+```{r}
+#the Roll model parameters c,σu
+c_param <- sqrt(-covpt$acf[2])
+print(c_param)    # c = 0.02018018
+
+# Calculating Sigma u
+Sig2u <- gamma0 +2*gamma1   #σu2
+Sigu <- sqrt(Sig2u)             # σu
+print(Sigu)                # σu = 0.04549248 
+
+n.trades <- length(pt)
+sigann <- sqrt(252*n.trades)*Sigu
+print(sigann)         #65.20767
+sav <-mean(pt)
+sigannln <- sigann/sav
+print(sigannln)        #0.3412752
+```
+c  = 0.02018018
+σu = 0.04549248 
+
+Problem2.Repeat the calibration, using this time the time series of the log-trade prices log pt. What are the parameters?
+```{r}
+pt <- as.numeric(tqdata$PRICE)
+log_pt <- log(pt)
+log_dpt <- diff(log_pt)
+log_acpt <- acf(log_dpt, lag.max =20, type= "correlation", plot =TRUE, main="Autocorrelation")
+
+covpt <- acf(log_dpt, lag.max=20, type="covariance", 
+             main="covariance of price changes")
+
+
+#Roll model estimate of bid-ask spread
+
+log_gamma0 <- sd(dpt)^2
+print(log_gamma0)
+
+log_gamma1 <- covpt$acf[2]
+print(gamma1)     #-1.116191e-08
+
+#Parameter C of the roll model
+c_param <- sqrt(-covpt$acf[2])
+print(c_param)    # c = 0.0001056499
+
+# Calculating Sigma u
+Sig2u <- gamma0 +2*gamma1   #sigma square
+Sigu <- sqrt(Sig2u)             # sigma u
+print(Sigu)                # sigma u = 0.0002380327 
+
+n.trades <- length(pt)
+sigann <- sqrt(252*n.trades)*Sigu
+print(sigann)         #0.341189 
+sav <-mean(pt)
+sigannln <- sigann/sav
+print(sigannln)        #0.00178567
+```
+Gamma 0 = 7.89737e-08
+Gamma 1 = -1.116191e-08
+c  = 0.0001056499
+σu = 0.0002380327
+
+Problem 3.1. Compute the signature plot showing σ2 (q) for lags q = 1 : 100. Recall day that σday(q) is the daily price volatility measured by keeping only every q-th trade price. For this part use the function realizedVar(q) as define.
+```{r}
+realizedVar <- function(q){
+  pr<- as.numeric(tqdata$PRICE)
+  rCov(diff(pr, lag=q, differences=1)/q)}
+# compute the signature plot sigma.day(q) = sqrt(RV(q))
+sig_data <- NULL
+for(q in 1:100){
+  sig_data <- c(sig_data, sqrt(realizedVar(q)))
+}
+plot(sig_data, type ="l", main="Signature plot")
+abline(h= sqrt(realizedVar(50)), col= "purple")
+```
+Problem 3.2.Comment on the shape of the signature plot. What do we learn from it?
+
+The volatility signature plot gives us a useful insigt abut bias of realised variance estimate is manifesting itself in an upward sloping pattern
+as the samppling interval or lag becomes shoter that is bias increases with assumed availability of high frequency price
+here sampling interval is time period divided by assumed available high frequency
+
+Problem 4.Compare the daily volatility obtained from point 1. σ2 = ntradesσu2
+day,Roll
+with the daily volatility obtained in point 3 with a lag q5min corresponding
+to a 5 minute interval between trades, assuming that the rate of trading is constant during the day.
+First determine the lag q5min = ntrades 5 and then compute the volatility.
+```{r}
+
+n.trades <- length(tqdata$PRICE)
+
+sig_p2_daily <- n.trades * Sig2u
+sig_p_daily <- sqrt(sig_p2_daily)
+sig_p_daily       #0.02149108
+
+
+q5mins <- (n.trades*5)/390
+rv5 = realizedVar(q5mins)
+rv5        ##0.1850623
+
+sig5min_daily =sqrt(rv5)
+sig5min_daily     #0.43018
+```
+The daily volatality from roll model = 0.02149108
+Daily volatality from lag q5min= 0.1850623
+The daily volatality calculated using q5mins is higher than the daily volatality calculated using roll model. Since, Roll model assumes uncorrelated trade indicatores and its more accurate.
+
+
+
